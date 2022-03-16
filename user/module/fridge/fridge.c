@@ -11,15 +11,50 @@
 
 #define MODULE_NAME "Fridge"
 
+extern void * kkv_init_ptr;
+extern void * kkv_destory_ptr;
+extern void * kkv_put_ptr;
+extern void * kkv_get_ptr;
+
+long kkv_init(int flags)
+{
+}
+
+long kkv_destory(int flags)
+{
+}
+
+long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
+{
+}
+
+long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
+{
+}
+
 int fridge_init(void)
 {
 	pr_info("Installing fridge\n");
+
+	//may need lock here
+	//
+	kkv_init_ptr = kkv_init;
+	kkv_destory_ptr = kkv_destory;
+	kkv_put_ptr = kkv_put;
+	kkv_get_ptr = kkv_get;
 	return 0;
 }
 
 void fridge_exit(void)
 {
 	pr_info("Removing fridge\n");
+
+	//may need lock here
+	//
+	kkv_init_ptr = NULL;
+	kkv_destory_ptr = NULL;
+	kkv_put_ptr = NULL;
+	kkv_get_ptr = NULL;
 }
 
 module_init(fridge_init);
