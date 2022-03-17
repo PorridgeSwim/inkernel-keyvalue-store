@@ -1,0 +1,1 @@
+cmd_/home/debbie/mnt/s3/hw5-22-Flowers/user/module/fridge/Module.symvers := sed 's/ko$$/o/' /home/debbie/mnt/s3/hw5-22-Flowers/user/module/fridge/modules.order | scripts/mod/modpost -m    -o /home/debbie/mnt/s3/hw5-22-Flowers/user/module/fridge/Module.symvers -e -i Module.symvers   -T -
