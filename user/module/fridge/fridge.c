@@ -18,6 +18,14 @@ extern void * kkv_get_ptr;
 
 long kkv_init(int flags)
 {
+	static struct kkv_ht_bucket *hashtable = kmalloc(17*sizeof(kkv_ht_bucket));
+	struct kkv_ht_bucket *current;
+	for (i=0; i<17, i++){
+		current = hashtable+i;
+		spin_lock_init(current->lock);
+		INIT_LIST_HEAD(current->entries);
+		current->count = 0;
+	}
 }
 
 long kkv_destory(int flags)
