@@ -28,8 +28,7 @@ long kkv_init(int flags)
 	int i = 0;
 	struct kkv_ht_bucket *CUR;
 
-	if (!hashtable)
-		hashtable = kmalloc(17*sizeof(struct kkv_ht_bucket), GFP_KERNEL);
+	hashtable = kmalloc(17*sizeof(struct kkv_ht_bucket), GFP_KERNEL);
 	if (hashtable == NULL) {
 		printk(KERN_ERR "kmalloc() failed to allocate memory\n");
 		return -1;
@@ -73,20 +72,37 @@ long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 {
 	struct kkv_ht_bucket *CUR;
 	struct kkv_ht_entry *cur;
+	void *pos;
 	int index = key % 17;
+	size_t cur_size;
 
 	CUR = hashtable + index;
+	pos = kmalloc(size * sizeof(char), GFP_KERNEL);
+	if (pos == NULL){
+		printk(KERN_ERR "kmallloc() failed to allocate memory\n");
+		return -1;
+	}
+
+	//spin_lock(&CUR->lock);
 	list_for_each_entry(cur, &CUR->entries, entries){
 		if((cur->kv_pair).key == key){
+			cur_size = (cur->kv_pair).size;
 			list_del(&cur->entries);
 			CUR->count--;
-			if(copy_to_user(val, (cur->kv_pair).val, min(size,(cur->kv_pair).size)))
-				return -EFAULT;
+			strcpy(pos, (cur->kv_pair).val);
 			kfree((cur->kv_pair).val);
 			kfree(cur);
+			//spin_unlock(&CUR->lock);
+
+			if (copy_to_user(val, pos, min(size, cur_size)))
+				return -EFAULT;
+			kfree(pos);
 			return 0;
 		}
 	}
+	//spin_unlock(&CUR->lock);
+
+	kfree(pos);
 	return -ENOENT;
 }
 
@@ -95,16 +111,19 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 	struct kkv_ht_bucket *CUR;
 	struct kkv_ht_entry *cur;
 	struct kkv_ht_entry *new_entry;
+	void *pos;
+	void *tem;
 	int index = key % 17;
 
-	CUR = hashtable + index;
-	list_for_each_entry(cur, &CUR->entries, entries){
-		if ((cur->kv_pair).key == key){
-			if(copy_from_user((cur->kv_pair).val, val, size))
-				return -EFAULT;
-			return 0;
-		}
+	pos = kmalloc(size * sizeof(char), GFP_KERNEL);
+	if (pos == NULL) {
+		printk(KERN_ERR "kmallloc() failed to allocate memory\n");
+		return -1;
 	}
+
+	CUR = hashtable + index;
+	if (copy_from_user(pos, val, size))
+		return -EFAULT;
 
 	new_entry = kmalloc(sizeof(struct kkv_ht_entry), GFP_KERNEL);
 	if (new_entry == NULL) {
@@ -112,15 +131,26 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 		return -1;
 	}
 	INIT_LIST_HEAD(&new_entry->entries);
-	list_add_tail(&new_entry->entries, &CUR->entries);
 	(new_entry->kv_pair).key = key;
 	(new_entry->kv_pair).size = size;
-	(new_entry->kv_pair).val = kmalloc(size * sizeof(char), GFP_KERNEL);
+	(new_entry->kv_pair).val = pos;
 
-	//maybe we don't need to copy from use twice
-	if (copy_from_user((new_entry->kv_pair).val, val, size))
-		return -EFAULT;
+//	spin_lock(&CUR->lock);
+	list_for_each_entry(cur, &CUR->entries, entries){
+		if ((cur->kv_pair).key == key){
+			tem = (cur->kv_pair).val;
+			(cur->kv_pair).val = pos;
+			//spin_unlock(&CUR->lock);
+
+			kfree(tem);
+			kfree(new_entry);
+			return 0;
+		}
+	}
+	list_add_tail(&new_entry->entries, &CUR->entries);
 	CUR->count++;
+//	spin_unlock(&CUR->lock);
+
 	return 0;
 }
 
