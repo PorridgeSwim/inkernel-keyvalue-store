@@ -28,11 +28,11 @@ long kkv_init(int flags)
 	int i = 0;
 	struct kkv_ht_bucket *CUR;
 
-	hashtable = kmalloc(17*sizeof(struct kkv_ht_bucket), GFP_KERNEL);
+	hashtable = kmalloc_array(HASH_TABLE_LENGTH, sizeof(struct kkv_ht_bucket), GFP_KERNEL);
 	if (hashtable == NULL)
 		return -ENOMEM;
 
-	for (i = 0; i < 17; i++) {
+	for (i = 0; i < HASH_TABLE_LENGTH; i++) {
 		CUR = hashtable+i;
 		spin_lock_init(&CUR->lock);
 		INIT_LIST_HEAD(&CUR->entries);
@@ -51,7 +51,7 @@ long kkv_destroy(int flags)
 	int i;
 	long sum = 0;
 
-	for (i = 0; i < 17; i++) {
+	for (i = 0; i < HASH_TABLE_LENGTH; i++) {
 		CUR = hashtable + i;
 		tem_list = &CUR->entries;
 		list_for_each_entry_safe(cur, nxt, tem_list, entries) {
@@ -71,7 +71,7 @@ long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 	struct kkv_ht_bucket *CUR;
 	struct kkv_ht_entry *cur;
 	void *pos;
-	int index = key % 17;
+	int index = key % HASH_TABLE_LENGTH;
 	size_t cur_size;
 
 	CUR = hashtable + index;
@@ -82,16 +82,18 @@ long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 	spin_lock(&CUR->lock);
 	list_for_each_entry(cur, &CUR->entries, entries) {
 		if ((cur->kv_pair).key == key) {
-			cur_size = (cur->kv_pair).size;
 			list_del(&cur->entries);
 			CUR->count--;
+			spin_unlock(&CUR->lock);
+
+			cur_size = (cur->kv_pair).size;
 			strcpy(pos, (cur->kv_pair).val);
 			kfree((cur->kv_pair).val);
 			kfree(cur);
-			spin_unlock(&CUR->lock);
-
-			if (copy_to_user(val, pos, min(size, cur_size)))
+			if (copy_to_user(val, pos, min(size, cur_size))) {
+				kfree(pos);
 				return -EFAULT;
+			}
 			kfree(pos);
 			return 0;
 		}
@@ -109,19 +111,23 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 	struct kkv_ht_entry *new_entry;
 	void *pos;
 	void *tem;
-	int index = key % 17;
+	int index = key % HASH_TABLE_LENGTH;
 
 	pos = kmalloc_array(size, sizeof(char), GFP_KERNEL);
 	if (pos == NULL)
 		return -ENOMEM;
 
 	CUR = hashtable + index;
-	if (copy_from_user(pos, val, size))
+	if (copy_from_user(pos, val, size)) {
+		kfree(pos);
 		return -EFAULT;
+	}
 
 	new_entry = kmalloc(sizeof(struct kkv_ht_entry), GFP_KERNEL);
-	if (new_entry == NULL)
+	if (new_entry == NULL) {
+		kfree(pos);
 		return -ENOMEM;
+	}
 
 	INIT_LIST_HEAD(&new_entry->entries);
 	(new_entry->kv_pair).key = key;
@@ -149,27 +155,24 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 
 int fridge_init(void)
 {
-	pr_info("Installing fridge\n");
-
-	//may need lock here
-	//
 	kkv_init_ptr = kkv_init;
 	kkv_destroy_ptr = kkv_destroy;
 	kkv_put_ptr = kkv_put;
 	kkv_get_ptr = kkv_get;
+
+	pr_info("Installing fridge\n");
+
 	return 0;
 }
 
 void fridge_exit(void)
 {
-	pr_info("Removing fridge\n");
-
-	//may need lock here
-	//
 	kkv_init_ptr = NULL;
 	kkv_destroy_ptr = NULL;
 	kkv_put_ptr = NULL;
 	kkv_get_ptr = NULL;
+
+	pr_info("Removing fridge\n");
 }
 
 module_init(fridge_init);
