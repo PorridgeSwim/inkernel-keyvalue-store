@@ -72,6 +72,7 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 	struct list_head *head_ptr;
 	int bucket_index;
 	typeof(*val) *val_kernel;
+	typeof(*val) *tmp;
 
 	val_kernel = kmalloc(sizeof(*val), GFP_KERNEL);
 	if (val_kernel == NULL)
@@ -81,29 +82,38 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 	bucket_ptr = &hash_table[bucket_index];
 	head_ptr = &bucket_ptr->entries;
 
-	if (copy_from_user(val_kernel, val, size))
+	if (copy_from_user(val_kernel, val, size)) {
+		kfree(val_kernel);
 		return -EFAULT;
-
-	spin_lock(&bucket_ptr->lock);
-	list_for_each_entry(ht_entry, head_ptr, entries) {
-		if (ht_entry->kv_pair.key == key) {
-			kfree(ht_entry->kv_pair.val);
-			ht_entry->kv_pair.val = val_kernel;
-			ht_entry->kv_pair.size = size;
-			spin_unlock(&bucket_ptr->lock);
-			return 0;
-		}
 	}
 
 	new_entry = kmalloc(sizeof(*new_entry), GFP_KERNEL);
-	if (new_entry == NULL)
+	if (new_entry == NULL) {
+		kfree(val_kernel);
 		return -ENOMEM;
+	}
 
 	new_entry->kv_pair.key = key;
 	new_entry->kv_pair.val = val_kernel;
 	new_entry->kv_pair.size = size;
 
 	INIT_LIST_HEAD(&new_entry->entries);
+
+	spin_lock(&bucket_ptr->lock);
+	list_for_each_entry(ht_entry, head_ptr, entries) {
+		if (ht_entry->kv_pair.key == key) {
+			tmp = ht_entry->kv_pair.val;
+			ht_entry->kv_pair.val = val_kernel;
+			ht_entry->kv_pair.size = size;
+			spin_unlock(&bucket_ptr->lock);
+
+			kfree(tmp);
+			kfree(new_entry);
+
+			return 0;
+		}
+	}
+
 	list_add_tail(&new_entry->entries, head_ptr);
 	bucket_ptr->count++;
 	spin_unlock(&bucket_ptr->lock);
