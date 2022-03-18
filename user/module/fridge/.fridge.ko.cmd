@@ -1,1 +1,0 @@
-cmd_/home/debbie/mnt/s3/hw5-22-Flowers/user/module/fridge/fridge.ko := ld -r -m elf_x86_64 --build-id=sha1  -T scripts/module.lds -o /home/debbie/mnt/s3/hw5-22-Flowers/user/module/fridge/fridge.ko /home/debbie/mnt/s3/hw5-22-Flowers/user/module/fridge/fridge.o /home/debbie/mnt/s3/hw5-22-Flowers/user/module/fridge/fridge.mod.o;  true
