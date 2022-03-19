@@ -1,8 +1,10 @@
 This file should contain:
 
--	Your name & UNI (or those of all group members for group assignments)
--	Homework assignment number
+-You Zhou yz3883, Aoxue Wei 3389, Panyu Gao pg2676
+-HW5
 -	Description for each part
+
+Part1 works successfully. This part is not hard, but I made a lot of mistakes in freeing memory. Also, for spin lock, when there are two conditions to return differnt things, I only unlocked it in one condition, which cause the deadlock in the other condition. But I have solved them all.
 
 The description should indicate whether your solution for the part is working
 or not. You may also want to include anything else you would like to
