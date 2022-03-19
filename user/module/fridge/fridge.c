@@ -139,6 +139,7 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 		if ((cur->kv_pair).key == key) {
 			tem = (cur->kv_pair).val;
 			(cur->kv_pair).val = pos;
+			(cur->kv_pair).size = size;
 			spin_unlock(&CUR->lock);
 
 			kfree(tem);
