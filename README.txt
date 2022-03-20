@@ -6,6 +6,7 @@ This file should contain:
 
 Part1 works successfully. This part is not hard, but I made a lot of mistakes in freeing memory. Also, for spin lock, when there are two conditions to return differnt things, I only unlocked it in one condition, which cause the deadlock in the other condition. But I have solved them all.
 
+Part2: I made some assumptions.
 The description should indicate whether your solution for the part is working
 or not. You may also want to include anything else you would like to
 communicate to the grader, such as extra functionality you implemented or how
