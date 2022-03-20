@@ -21,10 +21,19 @@ extern long (*kkv_destroy_ptr)(int flags);
 extern long (*kkv_put_ptr)(uint32_t key, void __user *val, size_t size, int flags);
 extern long (*kkv_get_ptr)(uint32_t key, void __user *val, size_t size, int flags);
 
-static struct kkv_ht_bucket *hash_table;
+// static struct kkv_ht_bucket *hash_table = NULL;
+
+struct bucket_withlock {
+	spinlock_t lock;
+	int destroyable;
+	struct kkv_ht_bucket *hash_table_withlock;
+};
+
+static struct bucket_withlock init_bucket;
 
 long kkv_init(int flags)
 {
+	struct kkv_ht_bucket *hash_table;
 	int i;
 	struct kkv_ht_bucket *index;
 
@@ -39,15 +48,39 @@ long kkv_init(int flags)
 		index->count = 0;
 	}
 
+	spin_lock(&(init_bucket.lock));
+	if (init_bucket.hash_table_withlock != NULL) {
+		spin_unlock(&(init_bucket.lock));
+		kfree(hash_table);
+		return -EPERM;
+	} else {
+		init_bucket.hash_table_withlock = hash_table;
+		init_bucket.destroyable = 1;
+		spin_unlock(&(init_bucket.lock));
+	}
+
 	return 0;
 }
 
 long kkv_destroy(int flags)
 {
+	struct kkv_ht_bucket *hash_table;
 	int count = 0;
 	int i;
 	struct kkv_ht_entry *cur, *nxt;
 	struct list_head *head_ptr;
+
+	spin_lock(&(init_bucket.lock));
+	if (init_bucket.destroyable == 1) {
+		hash_table = init_bucket.hash_table_withlock;
+		init_bucket.destroyable = 0;
+		init_bucket.hash_table_withlock = NULL;
+		spin_unlock(&(init_bucket.lock));
+	} else {
+		spin_unlock(&(init_bucket.lock));
+		return -EPERM;
+	}
+	
 
 	for (i = 0; i < HASH_TABLE_LENGTH; i++) {
 		head_ptr = &(&hash_table[i])->entries;
@@ -66,15 +99,28 @@ long kkv_destroy(int flags)
 
 long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 {
+	struct kkv_ht_bucket *hash_table;
 	struct kkv_ht_entry *new_entry;
 	struct kkv_ht_entry *ht_entry;
 	struct kkv_ht_bucket *bucket_ptr;
 	struct list_head *head_ptr;
 	int bucket_index;
 	typeof(*val) *val_kernel;
-	typeof(*val) *tmp;
+	void *tmp;
 
-	val_kernel = kmalloc(sizeof(*val), GFP_KERNEL);
+	spin_lock(&(init_bucket.lock));
+	if (init_bucket.hash_table_withlock != NULL) {
+		hash_table = init_bucket.hash_table_withlock;
+		init_bucket.destroyable = 0;
+		spin_unlock(&(init_bucket.lock));
+	} else {
+		spin_unlock(&(init_bucket.lock));
+		return -EPERM;
+	}
+
+	// val_kernel = kmalloc(sizeof(*val), GFP_KERNEL); should be sizeof(*val)+1
+	val_kernel = kmalloc_array(size, sizeof(char), GFP_KERNEL);
+
 	if (val_kernel == NULL)
 		return -ENOMEM;
 
@@ -118,15 +164,30 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 	bucket_ptr->count++;
 	spin_unlock(&bucket_ptr->lock);
 
+	spin_lock(&(init_bucket.lock));
+	init_bucket.destroyable = 1;
+	spin_unlock(&(init_bucket.lock));
+
 	return 0;
 }
 
 long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 {
+	struct kkv_ht_bucket *hash_table;
 	struct kkv_ht_entry *cur, *nxt;
 	struct list_head *head_ptr;
 	struct kkv_ht_bucket *bucket_ptr;
 	int bucket_index;
+
+	spin_lock(&(init_bucket.lock));
+	if (init_bucket.hash_table_withlock != NULL) {
+		hash_table = init_bucket.hash_table_withlock;
+		init_bucket.destroyable = 0;
+		spin_unlock(&(init_bucket.lock));
+	} else {
+		spin_unlock(&(init_bucket.lock));
+		return -EPERM;
+	}
 
 	bucket_index = key%HASH_TABLE_LENGTH;
 	bucket_ptr = &hash_table[bucket_index];
@@ -151,11 +212,18 @@ out_get:
 	kfree(cur->kv_pair.val);
 	kfree(cur);
 
+	spin_lock(&(init_bucket.lock));
+	init_bucket.destroyable = 1;
+	spin_unlock(&(init_bucket.lock));
+
 	return 0;
 }
 
 int fridge_init(void)
 {
+	spin_lock_init(&(init_bucket.lock));
+	init_bucket.hash_table_withlock = NULL;
+	init_bucket.destroyable = 0;
 	kkv_init_ptr = kkv_init;
 	kkv_destroy_ptr = kkv_destroy;
 	kkv_put_ptr = kkv_put;
