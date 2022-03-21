@@ -22,8 +22,7 @@ extern long (*kkv_put_ptr)(uint32_t key, void *val, size_t size, int flags);
 extern long (*kkv_get_ptr)(uint32_t key, void *val, size_t size, int flags);
 
 static struct kkv_ht_bucket *hashtable;
-static spinlock_t idp_lock;	// init, destroy and put lock
-static spinlock_t idg_lock;	// init, destroy and get lock
+static rwlock_t rwlock;	// init, destroy are writer, and put, get are reader
 
 long kkv_init(int flags)
 {
@@ -44,24 +43,17 @@ long kkv_init(int flags)
 		CUR->count = 0;
 	}
 
-	if (!spin_trylock(&idp_lock)) {
-		kfree(tem_table);
-		return -EPERM;
-	}
-	if (!spin_trylock(&idg_lock)) {
-		spin_unlock(&idp_lock);
+	if (!write_trylock(&rwlock)) {
 		kfree(tem_table);
 		return -EPERM;
 	}
 	if (hashtable != NULL) {
-		spin_unlock(&idg_lock);
-		spin_unlock(&idp_lock);
+		write_unlock(&rwlock);
 		kfree(tem_table);
 		return -EPERM;
 	}
 	hashtable = tem_table;
-	spin_unlock(&idg_lock);
-	spin_unlock(&idp_lock);
+	write_unlock(&rwlock);
 	return 0;
 }
 
@@ -77,21 +69,15 @@ long kkv_destroy(int flags)
 
 	// release the hashtable first, then free the memory is previously inside it
 
-	if (!spin_trylock(&idp_lock))
+	if (!write_trylock(&rwlock))
 		return -EPERM;
-	if (!spin_trylock(&idg_lock)) {
-		spin_unlock(&idp_lock);
-		return -EPERM;
-	}
 	if (hashtable == NULL) {
-		spin_unlock(&idg_lock);
-		spin_unlock(&idp_lock);
+		write_unlock(&rwlock);
 		return -EPERM;
 	}
 	tem_table = hashtable;
 	hashtable = NULL;
-	spin_unlock(&idg_lock);
-	spin_unlock(&idp_lock);
+	write_unlock(&rwlock);
 
 	for (i = 0; i < HASH_TABLE_LENGTH; i++) {
 		CUR = tem_table + i;
@@ -120,12 +106,12 @@ long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 	if (pos == NULL)
 		return -ENOMEM;
 
-	if (!spin_trylock(&idg_lock)) {
+	if (!read_trylock(&rwlock)) {
 		kfree(pos);
 		return -EPERM;
 	}
 	if (hashtable == NULL) {
-		spin_unlock(&idg_lock);
+		read_unlock(&rwlock);
 		kfree(pos);
 		return -EPERM;
 	}
@@ -136,7 +122,7 @@ long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 			list_del(&cur->entries);
 			CUR->count--;
 			spin_unlock(&CUR->lock);
-			spin_unlock(&idg_lock);
+			read_unlock(&rwlock);
 
 			cur_size = (cur->kv_pair).size;
 			strcpy(pos, (cur->kv_pair).val);
@@ -151,7 +137,7 @@ long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 		}
 	}
 	spin_unlock(&CUR->lock);
-	spin_unlock(&idg_lock);
+	read_unlock(&rwlock);
 
 	kfree(pos);
 	return -ENOENT;
@@ -186,13 +172,13 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 	(new_entry->kv_pair).size = size;
 	(new_entry->kv_pair).val = pos;
 
-	if (!spin_trylock(&idp_lock)) {
+	if (!read_trylock(&rwlock)) {
 		kfree(pos);
 		kfree(new_entry);
 		return -EPERM;
 	}
 	if (hashtable == NULL) {
-		spin_unlock(&idp_lock);
+		read_unlock(&rwlock);
 		kfree(pos);
 		kfree(new_entry);
 		return -EPERM;
@@ -205,7 +191,7 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 			(cur->kv_pair).val = pos;
 			(cur->kv_pair).size = size;
 			spin_unlock(&CUR->lock);
-			spin_unlock(&idp_lock);
+			read_unlock(&rwlock);
 
 			kfree(tem);
 			kfree(new_entry);
@@ -215,15 +201,14 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 	list_add_tail(&new_entry->entries, &CUR->entries);
 	CUR->count++;
 	spin_unlock(&CUR->lock);
-	spin_unlock(&idp_lock);
+	read_unlock(&rwlock);
 
 	return 0;
 }
 
 int fridge_init(void)
 {
-	spin_lock_init(&idp_lock);
-	spin_lock_init(&idg_lock);
+	rwlock_init(&rwlock);
 	kkv_init_ptr = kkv_init;
 	kkv_destroy_ptr = kkv_destroy;
 	kkv_put_ptr = kkv_put;
