@@ -50,6 +50,13 @@ void *get_thread(void *ignore)
 	pthread_exit(NULL);
 }
 
+void *init_thread(void *ignore){
+	for(int i = 0; i < 100000; i++){
+	kkv_init(0);
+	}
+	pthread_exit(NULL);
+}
+
 void put_get(int nthreads)
 {
 	pthread_t threads[nthreads];
@@ -63,7 +70,7 @@ void put_get(int nthreads)
 
 	for (i = 1; i < nthreads; i++) {
 		ret = pthread_create((threads + i), NULL,
-				get_thread, NULL);
+				init_thread, NULL);
 		if (ret)
 			die("pthread_create() failed");
 	}
