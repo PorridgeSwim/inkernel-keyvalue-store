@@ -1,72 +1,70 @@
-#include "con_ed.h"
+/*
+ * fridge_test.h
+ *
+ * Test driver for fridge kkv.
+ */
+#ifndef CON_ED_H
+#define CON_ED_H
 
-char *random_string(size_t max_len)
-{
-	int i;
-	size_t len = random() % max_len;
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <assert.h>
+#include <errno.h>
+#include <pthread.h>
+#include <sys/types.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <fridge.h>
 
-	char *rstring = (char *) malloc((len + 1) * sizeof(char));
+/*
+ * for older version of libfridge that don't define these
+ *
+ * #ifndef KKV_NONBLOCK
+ * #define KKV_NONBLOCK 0
+ * #endif
 
-	/*
-	 * Generate a random character from the range of
-	 * visible ASCII characters which goes from '!' to '~'
-	 */
-	for (i = 0; i < len; i++)
-		rstring[i] = '!' + (random() % ('~' - '!'));
+ * #ifndef KKV_BLOCK
+ * #define KKV_BLOCK 1
+ * #endif
+ */
 
-	rstring[i] = '\0';
-	return rstring;
-}
+#ifdef VERBOSE
+#define DEBUG(...) fprintf(stderr, "\t" __VA_ARGS__)
+#else
+#define DEBUG(...)
+#endif
 
-void free_string(char *rstring)
-{
-	free(rstring);
-}
+#ifndef MAX_VAL_SIZE
+#define MAX_VAL_SIZE 200
+#endif
 
-unsigned int *random_buf(size_t max_len)
-{
-	int i;
-	unsigned int r;
-	size_t len = (random() % max_len) + 1;
-	size_t size = len * sizeof(unsigned int);
+char *random_string(size_t max_len);
+void free_string(char *rstring);
+unsigned int *random_buf(size_t max_len);
+void free_buf(unsigned int *rbuf);
 
-	unsigned int *rbuf = (unsigned int *) malloc(size);
+void random_sleep(useconds_t max_time);
 
-	rbuf[0] = size;
+#define CON_ED_SIGNAL SIGUSR1
 
-	for (i = 1; i < len; i++) {
-		r = random();
-		rbuf[i] = r ? r : 1;
-	}
+int install_signal_handler(void);
+int raise_signal(pid_t pid);
 
-	return rbuf;
-}
+#define die(msg) \
+	do { \
+		perror(msg); \
+		exit(1); \
+	} while (0)
 
-void free_buf(unsigned int *rbuf)
-{
-	free(rbuf);
-}
+#define RUN_TEST(test, ...) \
+	do { \
+		srandom(time(NULL)); \
+		fprintf(stderr, "[ TEST ] " #test " ...\n"); \
+		test(__VA_ARGS__); \
+		fprintf(stderr, "... PASS\n"); \
+	} while (0)
 
-void random_sleep(useconds_t max_time)
-{
-	usleep(random() % max_time);
-}
-
-static void dud_signal_handler(int signum)
-{
-}
-
-int install_signal_handler(void)
-{
-	struct sigaction sa;
-
-	sigemptyset(&sa.sa_mask);
-	sa.sa_flags = 0;
-	sa.sa_handler = dud_signal_handler;
-	return sigaction(CON_ED_SIGNAL, &sa, NULL);
-}
-
-int raise_signal(pid_t pid)
-{
-	return kill(pid, CON_ED_SIGNAL);
-}
+#endif /* CON_ED_H */

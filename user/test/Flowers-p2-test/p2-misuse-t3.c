@@ -70,7 +70,9 @@ void put_get(int nthreads)
 
 	for (i = 0; i < nthreads; i++)
 		pthread_join(threads[i], NULL);
-	assert(kkv_destroy(0)==0);
+	if(kkv_destroy(0) < 0 ){
+		fprintf(stderr, "destroy error: %s\n", strerror(errno));
+	}
     fprintf(stderr, "destroyed\n");
 }
 
