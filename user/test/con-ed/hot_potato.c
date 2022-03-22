@@ -79,7 +79,9 @@ void hot_potato(int nthreads)
 	for (i = 0; i < nthreads; i++)
 		pthread_join(threads[i], NULL);
 
-	kkv_destroy(0);
+	if(kkv_destroy(0) < 0 ){
+		fprintf(stderr, "destroy error: %s\n", strerror(errno));
+	}
 }
 
 int main(int argc, char **argv)

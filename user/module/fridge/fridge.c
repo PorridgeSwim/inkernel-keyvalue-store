@@ -22,23 +22,38 @@ extern long (*kkv_put_ptr)(uint32_t key, void *val, size_t size, int flags);
 extern long (*kkv_get_ptr)(uint32_t key, void *val, size_t size, int flags);
 
 static struct kkv_ht_bucket *hashtable;
+static rwlock_t rwlock;	// init, destroy are writer, and put, get are reader
 
 long kkv_init(int flags)
 {
 	int i = 0;
 	struct kkv_ht_bucket *CUR;
+	struct kkv_ht_bucket *tem_table;
 
-	hashtable = kmalloc_array(HASH_TABLE_LENGTH, sizeof(struct kkv_ht_bucket), GFP_KERNEL);
-	if (hashtable == NULL)
+	tem_table = kmalloc_array(HASH_TABLE_LENGTH, sizeof(struct kkv_ht_bucket), GFP_KERNEL);
+	if (tem_table == NULL)
 		return -ENOMEM;
 
+	// create the table first, then assign it to hashtable
+
 	for (i = 0; i < HASH_TABLE_LENGTH; i++) {
-		CUR = hashtable+i;
+		CUR = tem_table+i;
 		spin_lock_init(&CUR->lock);
 		INIT_LIST_HEAD(&CUR->entries);
 		CUR->count = 0;
 	}
 
+	if (!write_trylock(&rwlock)) {
+		kfree(tem_table);
+		return -EPERM;
+	}
+	if (hashtable != NULL) {
+		write_unlock(&rwlock);
+		kfree(tem_table);
+		return -EPERM;
+	}
+	hashtable = tem_table;
+	write_unlock(&rwlock);
 	return 0;
 }
 
@@ -48,11 +63,24 @@ long kkv_destroy(int flags)
 	struct kkv_ht_entry *cur;
 	struct kkv_ht_entry *nxt;
 	struct list_head *tem_list;
+	struct kkv_ht_bucket *tem_table;
 	int i;
 	long sum = 0;
 
+	// release the hashtable first, then free the memory is previously inside it
+
+	if (!write_trylock(&rwlock))
+		return -EPERM;
+	if (hashtable == NULL) {
+		write_unlock(&rwlock);
+		return -EPERM;
+	}
+	tem_table = hashtable;
+	hashtable = NULL;
+	write_unlock(&rwlock);
+
 	for (i = 0; i < HASH_TABLE_LENGTH; i++) {
-		CUR = hashtable + i;
+		CUR = tem_table + i;
 		tem_list = &CUR->entries;
 		list_for_each_entry_safe(cur, nxt, tem_list, entries) {
 			list_del(&cur->entries);
@@ -62,7 +90,7 @@ long kkv_destroy(int flags)
 			sum++;
 		}
 	}
-	kfree(hashtable);
+	kfree(tem_table);
 	return sum;
 }
 
@@ -74,17 +102,27 @@ long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 	int index = key % HASH_TABLE_LENGTH;
 	size_t cur_size;
 
-	CUR = hashtable + index;
 	pos = kmalloc_array(size, sizeof(char), GFP_KERNEL);
 	if (pos == NULL)
 		return -ENOMEM;
 
+	if (!read_trylock(&rwlock)) {
+		kfree(pos);
+		return -EPERM;
+	}
+	if (hashtable == NULL) {
+		read_unlock(&rwlock);
+		kfree(pos);
+		return -EPERM;
+	}
+	CUR = hashtable + index;
 	spin_lock(&CUR->lock);
 	list_for_each_entry(cur, &CUR->entries, entries) {
 		if ((cur->kv_pair).key == key) {
 			list_del(&cur->entries);
 			CUR->count--;
 			spin_unlock(&CUR->lock);
+			read_unlock(&rwlock);
 
 			cur_size = (cur->kv_pair).size;
 			strcpy(pos, (cur->kv_pair).val);
@@ -99,6 +137,7 @@ long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 		}
 	}
 	spin_unlock(&CUR->lock);
+	read_unlock(&rwlock);
 
 	kfree(pos);
 	return -ENOENT;
@@ -117,7 +156,6 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 	if (pos == NULL)
 		return -ENOMEM;
 
-	CUR = hashtable + index;
 	if (copy_from_user(pos, val, size)) {
 		kfree(pos);
 		return -EFAULT;
@@ -134,6 +172,18 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 	(new_entry->kv_pair).size = size;
 	(new_entry->kv_pair).val = pos;
 
+	if (!read_trylock(&rwlock)) {
+		kfree(pos);
+		kfree(new_entry);
+		return -EPERM;
+	}
+	if (hashtable == NULL) {
+		read_unlock(&rwlock);
+		kfree(pos);
+		kfree(new_entry);
+		return -EPERM;
+	}
+	CUR = hashtable + index;
 	spin_lock(&CUR->lock);
 	list_for_each_entry(cur, &CUR->entries, entries) {
 		if ((cur->kv_pair).key == key) {
@@ -141,6 +191,7 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 			(cur->kv_pair).val = pos;
 			(cur->kv_pair).size = size;
 			spin_unlock(&CUR->lock);
+			read_unlock(&rwlock);
 
 			kfree(tem);
 			kfree(new_entry);
@@ -150,12 +201,14 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 	list_add_tail(&new_entry->entries, &CUR->entries);
 	CUR->count++;
 	spin_unlock(&CUR->lock);
+	read_unlock(&rwlock);
 
 	return 0;
 }
 
 int fridge_init(void)
 {
+	rwlock_init(&rwlock);
 	kkv_init_ptr = kkv_init;
 	kkv_destroy_ptr = kkv_destroy;
 	kkv_put_ptr = kkv_put;

@@ -5,8 +5,8 @@ CFLAGS = -Wall -O2
 LDFLAGS =
 LDLIBS = -lfridge -pthread
 
-# TESTS = simple_sequential hot_potato blocking_simple blocking_signal
-TESTS = simple_sequential hot_potato
+TESTS = p2-misuse-t1 p2-misuse-t2 p2-misuse-t3
+# TESTS = p2-misuse-t3
 TEST_OBJS = $(foreach exe, $(TESTS), $(exe).o)
 
 COMMON_SRC = con_ed_util.c
