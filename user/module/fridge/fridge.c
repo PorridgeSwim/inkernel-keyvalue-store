@@ -13,7 +13,6 @@
 #include <linux/syscalls.h>
 #include <linux/kernel.h>
 #include "fridge_data_structures.h"
-
 #define MODULE_NAME "Fridge"
 
 extern long (*kkv_init_ptr)(int flags);
@@ -23,6 +22,9 @@ extern long (*kkv_get_ptr)(uint32_t key, void *val, size_t size, int flags);
 
 static struct kkv_ht_bucket *hashtable;
 static rwlock_t rwlock;	// init, destroy are writer, and put, get are reader
+
+static struct kmem_cache *kkv_ht_entry_cachep; // create cache
+
 
 long kkv_init(int flags)
 {
@@ -85,7 +87,8 @@ long kkv_destroy(int flags)
 		list_for_each_entry_safe(cur, nxt, tem_list, entries) {
 			list_del(&cur->entries);
 			kfree((cur->kv_pair).val);
-			kfree(cur);
+			// kfree(cur);
+			kmem_cache_free(kkv_ht_entry_cachep, cur);
 			CUR->count--;
 			sum++;
 		}
@@ -127,7 +130,8 @@ long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 			cur_size = (cur->kv_pair).size;
 			strcpy(pos, (cur->kv_pair).val);
 			kfree((cur->kv_pair).val);
-			kfree(cur);
+			// kfree(cur);
+			kmem_cache_free(kkv_ht_entry_cachep, cur);
 			if (copy_to_user(val, pos, min(size, cur_size))) {
 				kfree(pos);
 				return -EFAULT;
@@ -161,7 +165,8 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 		return -EFAULT;
 	}
 
-	new_entry = kmalloc(sizeof(struct kkv_ht_entry), GFP_KERNEL);
+	// new_entry = kmalloc(sizeof(struct kkv_ht_entry), GFP_KERNEL);
+	new_entry = kmem_cache_alloc(kkv_ht_entry_cachep, GFP_KERNEL);
 	if (new_entry == NULL) {
 		kfree(pos);
 		return -ENOMEM;
@@ -174,13 +179,15 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 
 	if (!read_trylock(&rwlock)) {
 		kfree(pos);
-		kfree(new_entry);
+		// kfree(new_entry);
+		kmem_cache_free(kkv_ht_entry_cachep, new_entry);
 		return -EPERM;
 	}
 	if (hashtable == NULL) {
 		read_unlock(&rwlock);
 		kfree(pos);
-		kfree(new_entry);
+		// kfree(new_entry);
+		kmem_cache_free(kkv_ht_entry_cachep, new_entry);
 		return -EPERM;
 	}
 	CUR = hashtable + index;
@@ -194,7 +201,8 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 			read_unlock(&rwlock);
 
 			kfree(tem);
-			kfree(new_entry);
+			// kfree(new_entry);
+			kmem_cache_free(kkv_ht_entry_cachep, new_entry);
 			return 0;
 		}
 	}
@@ -209,6 +217,7 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 int fridge_init(void)
 {
 	rwlock_init(&rwlock);
+	kkv_ht_entry_cachep = kmem_cache_create("kkv_ht_entry", sizeof(struct kkv_ht_entry), 0, SLAB_PANIC, NULL);
 	kkv_init_ptr = kkv_init;
 	kkv_destroy_ptr = kkv_destroy;
 	kkv_put_ptr = kkv_put;
@@ -221,6 +230,7 @@ int fridge_init(void)
 
 void fridge_exit(void)
 {
+	kmem_cache_destroy(kkv_ht_entry_cachep);
 	kkv_init_ptr = NULL;
 	kkv_destroy_ptr = NULL;
 	kkv_put_ptr = NULL;
