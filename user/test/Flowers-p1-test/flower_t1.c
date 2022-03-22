@@ -18,7 +18,7 @@ void *init_color_thread(void *ignore)
 {
 	DEBUG("Thread [%u] init_hotpotato initialized\n", gettid());
 
-	/* let loose the hot potato! put "hot potato inside the key"*/
+	/* put one color in the chameleon*/
 	assert(kkv_put(KEY1, COLOR, strlen(COLOR) + 1, 0) == 0);
 
 	pthread_exit(NULL);
@@ -27,7 +27,8 @@ void *init_color_thread(void *ignore)
 void *change_color_thread(void *ignore)
 {
 	char res[MAX_VAL_SIZE];
-    int rightcolor = 0;
+	int rightcolor = 0;
+
 	DEBUG("Thread [%u] play_hotpotato initialized\n", gettid());
 
 	/* spin wait for the color, =0 means found, result returned to res */
@@ -37,16 +38,15 @@ void *change_color_thread(void *ignore)
 	DEBUG("[%u] Hot potato!\n", gettid());
 
 	/* check we have a right color and change the color */
-    if(strcmp(res,RED) == 0){
-        fprintf(stderr, "%s ", res);
-        assert(kkv_put(KEY1, GREEN, strlen(GREEN) + 1, 0) == 0);
-        rightcolor = 1;
-    }
-    else if(strcmp(res,GREEN) == 0){
-        fprintf(stderr, "%s ", res);
-        assert(kkv_put(KEY1, RED, strlen(RED) + 1, 0) == 0);
-        rightcolor = 1;
-    }
+	if (strcmp(res, RED) == 0) {
+		fprintf(stderr, "%s ", res);
+		assert(kkv_put(KEY1, GREEN, strlen(GREEN) + 1, 0) == 0);
+		rightcolor = 1;
+	} else if (strcmp(res, GREEN) == 0) {
+		fprintf(stderr, "%s ", res);
+		assert(kkv_put(KEY1, RED, strlen(RED) + 1, 0) == 0);
+		rightcolor = 1;
+	}
 	assert(rightcolor == 1);
 
 	pthread_exit(NULL);

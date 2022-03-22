@@ -4,9 +4,9 @@
 void flowers_sequential(void)
 {
 	int key1 = 0xbeef;
-    int key2 = 0xace;
+	int key2 = 0xace;
 	char *cosmos = "fall";
-    char *leucojum = "winter";
+	char *leucojum = "winter";
 	char *sakura = "spring";
 	char *lotus = "summer";
 	char res[MAX_VAL_SIZE];
