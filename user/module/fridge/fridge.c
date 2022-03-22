@@ -24,6 +24,7 @@ static struct kkv_ht_bucket *hashtable;
 static rwlock_t rwlock;	// init, destroy are writer, and put, get are reader
 
 static struct kmem_cache *kkv_ht_entry_cachep; // create cache
+// static LIST_HEAD(nonexist_list);
 
 
 long kkv_init(int flags)
@@ -67,6 +68,7 @@ long kkv_destroy(int flags)
 	struct list_head *tem_list;
 	struct kkv_ht_bucket *tem_table;
 	int i;
+	int ramdom;
 	long sum = 0;
 
 	// release the hashtable first, then free the memory is previously inside it
@@ -86,11 +88,16 @@ long kkv_destroy(int flags)
 		tem_list = &CUR->entries;
 		list_for_each_entry_safe(cur, nxt, tem_list, entries) {
 			list_del(&cur->entries);
-			kfree((cur->kv_pair).val);
+			if ((cur->kv_pair).val) {
+				kfree((cur->kv_pair).val);
+				CUR->count--;
+				sum++;
+			} else {
+				(cur->kv_pair).val = &ramdom;
+				wake_up(&cur->q);
+			}
 			// kfree(cur);
 			kmem_cache_free(kkv_ht_entry_cachep, cur);
-			CUR->count--;
-			sum++;
 		}
 	}
 	kfree(tem_table);
@@ -101,14 +108,35 @@ long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 {
 	struct kkv_ht_bucket *CUR;
 	struct kkv_ht_entry *cur;
+	struct kkv_ht_entry *new_entry = NULL;
 	void *pos;
+	void *tem;
 	int index = key % HASH_TABLE_LENGTH;
+	int from_wq = 0;
+	int deletable = 0;
 	size_t cur_size;
 
 	pos = kmalloc_array(size, sizeof(char), GFP_KERNEL);
 	if (pos == NULL)
 		return -ENOMEM;
 
+	if (flags) {   // block
+		new_entry = kmem_cache_alloc(kkv_ht_entry_cachep, GFP_KERNEL);
+		if (new_entry == NULL) {
+			kfree(pos);
+			return -ENOMEM;
+		}
+
+		INIT_LIST_HEAD(&new_entry->entries);
+		(new_entry->kv_pair).key = key;
+		(new_entry->kv_pair).size = 0;
+		(new_entry->kv_pair).val = NULL;
+		new_entry->q_count = 1;
+		init_waitqueue_head(&new_entry->q);
+	}
+
+
+get_value:
 	if (!read_trylock(&rwlock)) {
 		kfree(pos);
 		return -EPERM;
@@ -119,19 +147,43 @@ long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 		return -EPERM;
 	}
 	CUR = hashtable + index;
+
 	spin_lock(&CUR->lock);
 	list_for_each_entry(cur, &CUR->entries, entries) {
 		if ((cur->kv_pair).key == key) {
-			list_del(&cur->entries);
-			CUR->count--;
-			spin_unlock(&CUR->lock);
-			read_unlock(&rwlock);
+			if ((cur->kv_pair).val) {
+				tem = (cur->kv_pair).val;
+				(cur->kv_pair).val = NULL;
+				CUR->count--;
+				if (from_wq)
+					cur->q_count--;
+				if (cur->q_count == 0) {
+					list_del(&cur->entries);
+					deletable = 1;
+				}
+				spin_unlock(&CUR->lock);
+				read_unlock(&rwlock);
+				if (new_entry)
+					kmem_cache_free(kkv_ht_entry_cachep, new_entry);
+			} else {
+				cur->q_count++;
+				spin_unlock(&CUR->lock);
+				read_unlock(&rwlock);
+				if (new_entry)
+					kmem_cache_free(kkv_ht_entry_cachep, new_entry);
+				wait_event_interruptible(cur->q, (cur->kv_pair).val != NULL);
+				if (signal_pending(current))
+					return -EINTR;
+				from_wq = 1;
+				goto get_value;
+			}
 
 			cur_size = (cur->kv_pair).size;
-			strcpy(pos, (cur->kv_pair).val);
-			kfree((cur->kv_pair).val);
-			// kfree(cur);
-			kmem_cache_free(kkv_ht_entry_cachep, cur);
+			strcpy(pos, tem);
+			kfree(tem);
+			if (deletable)
+				kmem_cache_free(kkv_ht_entry_cachep, cur);
+
 			if (copy_to_user(val, pos, min(size, cur_size))) {
 				kfree(pos);
 				return -EFAULT;
@@ -140,11 +192,22 @@ long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 			return 0;
 		}
 	}
-	spin_unlock(&CUR->lock);
-	read_unlock(&rwlock);
 
-	kfree(pos);
-	return -ENOENT;
+	if (flags) { //block
+		list_add_tail(&new_entry->entries, &CUR->entries);
+		spin_unlock(&CUR->lock);
+		read_unlock(&rwlock);
+		wait_event_interruptible(new_entry->q, (new_entry->kv_pair).val != NULL);
+		if (signal_pending(current))
+			return -EINTR;
+		from_wq = 1;
+		goto get_value;
+	} else { //non-block
+		spin_unlock(&CUR->lock);
+		read_unlock(&rwlock);
+		kfree(pos);
+		return -ENOENT;
+	}
 }
 
 long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
@@ -176,6 +239,8 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 	(new_entry->kv_pair).key = key;
 	(new_entry->kv_pair).size = size;
 	(new_entry->kv_pair).val = pos;
+	new_entry->q_count = 0;
+	init_waitqueue_head(&new_entry->q);
 
 	if (!read_trylock(&rwlock)) {
 		kfree(pos);
@@ -197,6 +262,8 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 			tem = (cur->kv_pair).val;
 			(cur->kv_pair).val = pos;
 			(cur->kv_pair).size = size;
+			if (cur->q_count > 0)
+				wake_up_interruptible(&cur->q);
 			spin_unlock(&CUR->lock);
 			read_unlock(&rwlock);
 
