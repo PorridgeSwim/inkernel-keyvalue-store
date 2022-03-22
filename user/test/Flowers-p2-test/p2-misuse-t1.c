@@ -1,7 +1,7 @@
 /*kkv_init(), kkv_destroy() called twice*/
 #include "con_ed.h"
 
-void flowers_sequential(void)
+void init_twice(void)
 {
 	int key1 = 0xbeef;
 	char *sakura = "spring";
@@ -23,6 +23,6 @@ void flowers_sequential(void)
 
 int main(void)
 {
-	RUN_TEST(flowers_sequential);
+	RUN_TEST(init_twice);
 	return 0;
 }
