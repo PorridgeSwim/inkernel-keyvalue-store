@@ -66,7 +66,7 @@ void init_vs_put(int nthreads)
 
 	kkv_init(0);
 	for (i = 0; i < nthreads/2; i++) {
-		ret = pthread_create((pthread_t *) threads, NULL, init_thread, NULL);
+		ret = pthread_create((pthread_t *) threads + i, NULL, init_thread, NULL);
 		if (ret)
 			die("pthread_create() failed");
 	}
