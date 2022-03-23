@@ -1,0 +1,1 @@
+cmd_/home/aster233/hw/hw5-22-Flowers/user/module/fridge/fridge.mod := { echo  /home/aster233/hw/hw5-22-Flowers/user/module/fridge/fridge.o;  echo; } > /home/aster233/hw/hw5-22-Flowers/user/module/fridge/fridge.mod

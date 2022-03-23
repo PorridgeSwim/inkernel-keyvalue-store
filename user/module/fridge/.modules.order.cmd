@@ -1,0 +1,1 @@
+cmd_/home/aster233/hw/hw5-22-Flowers/user/module/fridge/modules.order := {   echo /home/aster233/hw/hw5-22-Flowers/user/module/fridge/fridge.ko; :; } | awk '!x[$$0]++' - > /home/aster233/hw/hw5-22-Flowers/user/module/fridge/modules.order

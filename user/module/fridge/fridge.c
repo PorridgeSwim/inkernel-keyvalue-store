@@ -74,6 +74,8 @@ long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 	int index = key % HASH_TABLE_LENGTH;
 	size_t cur_size;
 
+	if (size <= 0 || val == NULL)
+		return -EINVAL;
 	CUR = hashtable + index;
 	pos = kmalloc_array(size, sizeof(char), GFP_KERNEL);
 	if (pos == NULL)
@@ -116,6 +118,8 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 	pos = kmalloc_array(size, sizeof(char), GFP_KERNEL);
 	if (pos == NULL)
 		return -ENOMEM;
+	if (size <= 0 || val == NULL)
+		return -EINVAL;
 
 	CUR = hashtable + index;
 	if (copy_from_user(pos, val, size)) {
