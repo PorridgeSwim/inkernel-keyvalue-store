@@ -116,7 +116,10 @@ long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 	int deletable = 0;
 	size_t cur_size;
 
-	if ((flags != 0) && (flags != 1))
+	if (size <= 0 || val == NULL)
+		return -EINVAL;
+
+	if ((flags != KKV_BLOCK) && (flags != KKV_NONBLOCK))
 		return -EINVAL;
 
 	pos = kmalloc_array(size, sizeof(char), GFP_KERNEL);
@@ -162,8 +165,6 @@ get_value:
 				tem = (cur->kv_pair).val;
 				(cur->kv_pair).val = NULL;
 				CUR->count--;
-				// if (from_wq)
-				// 	cur->q_count--;
 				if (cur->q_count == 0) {
 					list_del(&cur->entries);
 					deletable = 1;
@@ -175,8 +176,6 @@ get_value:
 			} else {
 				if (flags == 0)
 					goto out_nonblock;
-				// if (!from_wq)
-				// 	cur->q_count++;
 				cur->q_count++;
 				spin_unlock(&CUR->lock);
 				read_unlock(&rwlock);
@@ -231,6 +230,9 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 	void *tem;
 	int index = key % HASH_TABLE_LENGTH;
 
+	if (size <= 0 || val == NULL)
+		return -EINVAL;
+
 	pos = kmalloc_array(size, sizeof(char), GFP_KERNEL);
 	if (pos == NULL)
 		return -ENOMEM;
@@ -276,8 +278,6 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 			(cur->kv_pair).size = size;
 
 			if (cur->q_count > 0) {
-				// spin_unlock(&CUR->lock);
-				// read_unlock(&rwlock);
 				for (;;) {
 					if (waitqueue_active(&cur->q)) {
 						wake_up_interruptible(&cur->q);
@@ -291,11 +291,6 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 				spin_unlock(&CUR->lock);
 				read_unlock(&rwlock);
 			}
-
-			// if (cur->q_count > 0)
-			// 	wake_up_interruptible(&cur->q);
-			// spin_unlock(&CUR->lock);
-			// read_unlock(&rwlock);
 
 			kfree(tem);
 			// kfree(new_entry);
