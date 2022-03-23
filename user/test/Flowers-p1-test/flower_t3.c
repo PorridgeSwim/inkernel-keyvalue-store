@@ -15,6 +15,7 @@ void check_input(void)
 	errno = 0;
 	assert(kkv_get(key2, NULL, MAX_VAL_SIZE, KKV_NONBLOCK) != 0);
 	assert(errno == EINVAL);
+	kkv_destroy(0);
 }
 
 int main(void)
