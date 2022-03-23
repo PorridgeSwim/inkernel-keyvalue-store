@@ -102,11 +102,11 @@ long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 	int index = key % HASH_TABLE_LENGTH;
 	size_t cur_size;
 
+	if (size <= 0 || val == NULL)
+		return -EINVAL;
 	pos = kmalloc_array(size, sizeof(char), GFP_KERNEL);
 	if (pos == NULL)
 		return -ENOMEM;
-	if (size <= 0 || val == NULL)
-		return -EINVAL;
 	if (!read_trylock(&rwlock)) {
 		kfree(pos);
 		return -EPERM;
@@ -153,11 +153,11 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 	void *tem;
 	int index = key % HASH_TABLE_LENGTH;
 
+	if (size <= 0 || val == NULL)
+		return -EINVAL;
 	pos = kmalloc_array(size, sizeof(char), GFP_KERNEL);
 	if (pos == NULL)
 		return -ENOMEM;
-	if (size <= 0 || val == NULL)
-		return -EINVAL;
 	if (copy_from_user(pos, val, size)) {
 		kfree(pos);
 		return -EFAULT;
