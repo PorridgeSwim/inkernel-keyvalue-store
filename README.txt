@@ -21,3 +21,5 @@ We allowed `kkv_get` to insert key-null pairs to the hash table if that entry do
 In order to wake up the waiting processes, we modified `kkv_put`. When we insert a value that some `kkv_get` processes are waiting for, the function will wake up sleeping processes by `wake_up_interruptible`.
 
 We also modified `kkv_destroy` to support terminate sleeping processes. It will set `val`s to a valid address to wake up those process. As the hash table does not exist now, those processes will return `-EPERM`.
+
+Test case - p4-test1: This test checks that if sleeping `kkv_get` will return "-EPERM" when `kkv_destroy` is called.
