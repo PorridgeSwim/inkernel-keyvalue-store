@@ -5,7 +5,7 @@ CFLAGS = -Wall -O2
 LDFLAGS =
 LDLIBS = -lfridge -pthread
 
-TESTS = p4_test1 
+TESTS = p4_test1
 TEST_OBJS = $(foreach exe, $(TESTS), $(exe).o)
 
 COMMON_SRC = con_ed_util.c

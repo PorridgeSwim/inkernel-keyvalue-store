@@ -68,7 +68,7 @@ long kkv_destroy(int flags)
 	struct list_head *tem_list;
 	struct kkv_ht_bucket *tem_table;
 	int i;
-	int ramdom;
+	int random;
 	long sum = 0;
 
 	// release the hashtable first, then free the memory is previously inside it
@@ -93,8 +93,8 @@ long kkv_destroy(int flags)
 				CUR->count--;
 				sum++;
 			} else {
-				(cur->kv_pair).val = &ramdom;
-				wake_up(&cur->q);
+				(cur->kv_pair).val = &random;
+				wake_up_interruptible(&cur->q);
 			}
 			// kfree(cur);
 			kmem_cache_free(kkv_ht_entry_cachep, cur);
@@ -115,6 +115,9 @@ long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 	int from_wq = 0;
 	int deletable = 0;
 	size_t cur_size;
+
+	if ((flags != 0) && (flags != 1))
+		return -EINVAL;
 
 	pos = kmalloc_array(size, sizeof(char), GFP_KERNEL);
 	if (pos == NULL)
@@ -139,11 +142,15 @@ long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 get_value:
 	if (!read_trylock(&rwlock)) {
 		kfree(pos);
+		if (new_entry)
+			kmem_cache_free(kkv_ht_entry_cachep, new_entry);
 		return -EPERM;
 	}
 	if (hashtable == NULL) {
 		read_unlock(&rwlock);
 		kfree(pos);
+		if (new_entry)
+			kmem_cache_free(kkv_ht_entry_cachep, new_entry);
 		return -EPERM;
 	}
 	CUR = hashtable + index;
@@ -155,8 +162,8 @@ get_value:
 				tem = (cur->kv_pair).val;
 				(cur->kv_pair).val = NULL;
 				CUR->count--;
-				if (from_wq)
-					cur->q_count--;
+				// if (from_wq)
+				// 	cur->q_count--;
 				if (cur->q_count == 0) {
 					list_del(&cur->entries);
 					deletable = 1;
@@ -166,6 +173,10 @@ get_value:
 				if (new_entry)
 					kmem_cache_free(kkv_ht_entry_cachep, new_entry);
 			} else {
+				if (flags == 0)
+					goto out_nonblock;
+				// if (!from_wq)
+				// 	cur->q_count++;
 				cur->q_count++;
 				spin_unlock(&CUR->lock);
 				read_unlock(&rwlock);
@@ -203,6 +214,7 @@ get_value:
 		from_wq = 1;
 		goto get_value;
 	} else { //non-block
+out_nonblock:
 		spin_unlock(&CUR->lock);
 		read_unlock(&rwlock);
 		kfree(pos);
@@ -262,10 +274,28 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 			tem = (cur->kv_pair).val;
 			(cur->kv_pair).val = pos;
 			(cur->kv_pair).size = size;
-			if (cur->q_count > 0)
-				wake_up_interruptible(&cur->q);
-			spin_unlock(&CUR->lock);
-			read_unlock(&rwlock);
+
+			if (cur->q_count > 0) {
+				// spin_unlock(&CUR->lock);
+				// read_unlock(&rwlock);
+				for (;;) {
+					if (waitqueue_active(&cur->q)) {
+						wake_up_interruptible(&cur->q);
+						break;
+					}
+				}
+				cur->q_count = 0;
+				spin_unlock(&CUR->lock);
+				read_unlock(&rwlock);
+			} else {
+				spin_unlock(&CUR->lock);
+				read_unlock(&rwlock);
+			}
+
+			// if (cur->q_count > 0)
+			// 	wake_up_interruptible(&cur->q);
+			// spin_unlock(&CUR->lock);
+			// read_unlock(&rwlock);
 
 			kfree(tem);
 			// kfree(new_entry);
