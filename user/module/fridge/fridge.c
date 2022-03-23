@@ -278,8 +278,9 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 			(cur->kv_pair).size = size;
 
 			if (cur->q_count > 0) {
+				// eliminate the gap between unlock and wait_event_interuptible
 				for (;;) {
-					if (waitqueue_active(&cur->q)) {
+					if (waitqueue_active(&cur->q)) { // wait queue is not empty
 						wake_up_interruptible(&cur->q);
 						break;
 					}

@@ -14,10 +14,10 @@ Part2: We use read write lock in this part. We regards init/destroy as writers a
 
 Part3 works successfully. We just create the SLAB cache by `kmem_cache_create`. and replace `kmalloc()` and `kfree()` to appropriate SLAB allocator calls `kmem_cache_alloc()` and `kmem_cache_free()`.
 
-Part4 works successfully. In this part, we modified our `kkv_destroy`, `kkv_get`, `kkv_put` to support blocking. 
+Part4 works successfully. In this part, we modified our `kkv_destroy`, `kkv_get`, `kkv_put` to support blocking.
 
-We allowed `kkv_get` to insert key-null pairs to the hash table if that entry does not exist. If the val of a key is NULL, which also means that the key does not exist actually. The `q` in `kkv_ht_entry` is used to store the wait queue and `q_count` is the number of process in the wait queue. Everytime we want to get a non-existed key-val pair under block mode, the `kkv_get` will be blocked by `wait_event_interuptible` and the `q_count` will plus one. When a value comes in, it will be woken up and go back to the beginning of the `kkv_get` function. 
+We allowed `kkv_get` to insert key-null pairs to the hash table if that entry does not exist. If the val of a key is NULL, which also means that the key does not exist actually. The `q` in `kkv_ht_entry` is used to store the wait queue and `q_count` is the number of process in the wait queue. Everytime we want to get a non-existed key-val pair under block mode, the `kkv_get` will be blocked by `wait_event_interuptible` and the `q_count` will plus one. When a value comes in, it will be woken up and go back to the beginning of the `kkv_get` function.
 
 In order to wake up the waiting processes, we modified `kkv_put`. When we insert a value that some `kkv_get` processes are waiting for, the function will wake up sleeping processes by `wake_up_interruptible`.
 
-We also modified `kkv_destroy` to support terminate sleeping processes. It will set `val`s to a valid address to wake up those process. As the hash table does not exist now, those processes will return `-EPERM`
+We also modified `kkv_destroy` to support terminate sleeping processes. It will set `val`s to a valid address to wake up those process. As the hash table does not exist now, those processes will return `-EPERM`.
