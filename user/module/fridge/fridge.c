@@ -105,6 +105,8 @@ long kkv_get(uint32_t key, void __user *val, size_t size, int flags)
 	int index = key % HASH_TABLE_LENGTH;
 	size_t cur_size;
 
+	if (size <= 0 || val == NULL)
+		return -EINVAL;
 	pos = kmalloc_array(size, sizeof(char), GFP_KERNEL);
 	if (pos == NULL)
 		return -ENOMEM;
@@ -156,6 +158,8 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 	void *tem;
 	int index = key % HASH_TABLE_LENGTH;
 
+	if (size <= 0 || val == NULL)
+		return -EINVAL;
 	pos = kmalloc_array(size, sizeof(char), GFP_KERNEL);
 	if (pos == NULL)
 		return -ENOMEM;
@@ -217,7 +221,8 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 int fridge_init(void)
 {
 	rwlock_init(&rwlock);
-	kkv_ht_entry_cachep = kmem_cache_create("kkv_ht_entry", sizeof(struct kkv_ht_entry), 0, SLAB_PANIC, NULL);
+	kkv_ht_entry_cachep = kmem_cache_create("kkv_ht_entry",
+		sizeof(struct kkv_ht_entry), 0, SLAB_PANIC, NULL);
 	kkv_init_ptr = kkv_init;
 	kkv_destroy_ptr = kkv_destroy;
 	kkv_put_ptr = kkv_put;
