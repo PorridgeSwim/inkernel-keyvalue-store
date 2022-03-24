@@ -1,6 +1,6 @@
 This file should contain:
 
--You Zhou yz3883, Aoxue Wei 3389, Panyu Gao pg2676
+-You Zhou yz3883, Aoxue Wei aw3389, Panyu Gao pg2676
 -HW5
 -Description for each part
 
