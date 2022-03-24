@@ -5,7 +5,7 @@ CFLAGS = -Wall -O2
 LDFLAGS =
 LDLIBS = -lfridge -pthread
 
-TESTS = p2-misuse-t1 p2-misuse-t2 p2-misuse-t3 p1-test1 p1-test2 p1-test3
+TESTS = p2-misuse-t1 p2-misuse-t2 p2-misuse-t3 p1-test1 p1-test2 p1-test3 p2-misuse-t4
 # TESTS = p2-misuse-t3
 TEST_OBJS = $(foreach exe, $(TESTS), $(exe).o)
 
