@@ -182,8 +182,28 @@ get_value:
 				if (new_entry)
 					kmem_cache_free(kkv_ht_entry_cachep, new_entry);
 				wait_event_interruptible(cur->q, (cur->kv_pair).val != NULL);
-				if (signal_pending(current))
+				if (signal_pending(current)) {
+					if (!read_trylock(&rwlock)) {
+						kfree(pos);
+						if (new_entry)
+							kmem_cache_free(kkv_ht_entry_cachep, new_entry);
+						return -EPERM;
+					}
+					if (hashtable == NULL) {
+						read_unlock(&rwlock);
+						kfree(pos);
+						if (new_entry)
+							kmem_cache_free(kkv_ht_entry_cachep, new_entry);
+						return -EPERM;
+					}
+					cur->q_count--;
+					spin_unlock(&CUR->lock);
+					read_unlock(&rwlock);
+
+					kfree(pos);
+					kmem_cache_free(kkv_ht_entry_cachep, new_entry);
 					return -EINTR;
+				}
 				from_wq = 1;
 				goto get_value;
 			}
@@ -208,9 +228,30 @@ get_value:
 		spin_unlock(&CUR->lock);
 		read_unlock(&rwlock);
 		wait_event_interruptible(new_entry->q, (new_entry->kv_pair).val != NULL);
-		if (signal_pending(current))
+		if (signal_pending(current)) {
+			if (!read_trylock(&rwlock)) {
+				kfree(pos);
+				if (new_entry)
+					kmem_cache_free(kkv_ht_entry_cachep, new_entry);
+				return -EPERM;
+			}
+			if (hashtable == NULL) {
+				read_unlock(&rwlock);
+				kfree(pos);
+				if (new_entry)
+					kmem_cache_free(kkv_ht_entry_cachep, new_entry);
+				return -EPERM;
+			}
+			list_del(&new_entry->entries);
+			spin_unlock(&CUR->lock);
+			read_unlock(&rwlock);
+
+			kfree(pos);
+			kmem_cache_free(kkv_ht_entry_cachep, new_entry);
 			return -EINTR;
+		}
 		from_wq = 1;
+		new_entry = NULL;
 		goto get_value;
 	} else { //non-block
 out_nonblock:
