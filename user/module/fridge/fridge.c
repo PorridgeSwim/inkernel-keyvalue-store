@@ -185,15 +185,11 @@ get_value:
 				if (signal_pending(current)) {
 					if (!read_trylock(&rwlock)) {
 						kfree(pos);
-						if (new_entry)
-							kmem_cache_free(kkv_ht_entry_cachep, new_entry);
 						return -EPERM;
 					}
 					if (hashtable == NULL) {
 						read_unlock(&rwlock);
 						kfree(pos);
-						if (new_entry)
-							kmem_cache_free(kkv_ht_entry_cachep, new_entry);
 						return -EPERM;
 					}
 					spin_lock(&CUR->lock);
@@ -320,21 +316,12 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 			(cur->kv_pair).val = pos;
 			(cur->kv_pair).size = size;
 
-			if (cur->q_count > 0) {
-				// eliminate the gap between unlock and wait_event_interuptible
-				for (;;) {
-					if (waitqueue_active(&cur->q)) { // wait queue is not empty
-						wake_up_interruptible(&cur->q);
-						break;
-					}
-				}
+			if (waitqueue_active(&cur->q)) { // wait queue is not empty
+				wake_up_interruptible(&cur->q);
 				cur->q_count = 0;
-				spin_unlock(&CUR->lock);
-				read_unlock(&rwlock);
-			} else {
-				spin_unlock(&CUR->lock);
-				read_unlock(&rwlock);
 			}
+			spin_unlock(&CUR->lock);
+			read_unlock(&rwlock);
 
 			kfree(tem);
 			// kfree(new_entry);
@@ -353,7 +340,8 @@ long kkv_put(uint32_t key, void __user *val, size_t size, int flags)
 int fridge_init(void)
 {
 	rwlock_init(&rwlock);
-	kkv_ht_entry_cachep = kmem_cache_create("kkv_ht_entry", sizeof(struct kkv_ht_entry), 0, SLAB_PANIC, NULL);
+	kkv_ht_entry_cachep = kmem_cache_create("kkv_ht_entry",
+		sizeof(struct kkv_ht_entry), 0, SLAB_PANIC, NULL);
 	kkv_init_ptr = kkv_init;
 	kkv_destroy_ptr = kkv_destroy;
 	kkv_put_ptr = kkv_put;
