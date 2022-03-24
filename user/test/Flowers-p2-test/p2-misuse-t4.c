@@ -28,14 +28,14 @@ void *destroy_thread(void *ignore)
 {
 	int desres;
 
-    for (int i = 0; i < test_times; i++) {
-        desres = kkv_destroy(0);
+	for (int i = 0; i < test_times; i++) {
+		desres = kkv_destroy(0);
 		if (desres != 0) {
 			fprintf(stderr, "destroy error %s, Stop destroying\n", strerror(errno));
 			pthread_exit(NULL);
 		}
-        kkv_init(0);
-    }
+		kkv_init(0);
+	}
 	pthread_exit(NULL);
 }
 
