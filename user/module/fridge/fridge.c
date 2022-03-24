@@ -196,6 +196,7 @@ get_value:
 							kmem_cache_free(kkv_ht_entry_cachep, new_entry);
 						return -EPERM;
 					}
+					spin_lock(&CUR->lock);
 					cur->q_count--;
 					spin_unlock(&CUR->lock);
 					read_unlock(&rwlock);
@@ -242,6 +243,7 @@ get_value:
 					kmem_cache_free(kkv_ht_entry_cachep, new_entry);
 				return -EPERM;
 			}
+			spin_lock(&CUR->lock);
 			list_del(&new_entry->entries);
 			spin_unlock(&CUR->lock);
 			read_unlock(&rwlock);
